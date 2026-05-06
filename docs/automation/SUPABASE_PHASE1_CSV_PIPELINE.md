@@ -7,7 +7,7 @@ This repo ships a **local automation** for keeping workspace-root **`interaction
 | Command | What it does |
 |---------|----------------|
 | `npm run supabase:phase1-csv-pipeline -- export` | `SELECT` from Supabase/Postgres → writes **`interactions.csv`** and **`substances.csv`** at the **repo root**. |
-| `npm run supabase:phase1-csv-pipeline -- emit-bundle` | Copies **`docs/metabase/interactions_enriched.sql`** → **`scripts/automation/generated/interactions_enriched.sql`** (gitignored local bundle). Removes a stale **`interactions_enriched_v2.sql`** in that folder if present. No DB access. |
+| `npm run supabase:phase1-csv-pipeline -- emit-bundle` | Copies committed Metabase model SQL from **`docs/metabase/`** into **`scripts/automation/generated/`** (gitignored local bundle), including **`interactions_enriched.sql`** and **`class_interaction_matrix.sql`**. Removes a stale **`interactions_enriched_v2.sql`** in that folder if present. No DB access. |
 | `npm run supabase:phase1-csv-pipeline -- all` | Runs **export** then **emit-bundle**. |
 
 **Environment (export only):** set **`DATABASE_URL`** or **`SUPABASE_DB_URL`** in **`.env.local`** (gitignored). Use a connection string that can `SELECT` from `public` (pooled or direct). Do not commit secrets.
@@ -26,7 +26,8 @@ After a successful swap, run **`npm run dataset:build-beta -- .`** so JSON snaps
 ## Metabase model SQL
 
 - Canonical query: [docs/metabase/interactions_enriched.sql](../metabase/interactions_enriched.sql) (normalized pair ids, `pair_key` hygiene, `is_comparable_pair`, `risk_severity_bucket`, `risk_bucket` alias).
-- After `emit-bundle`, the file is written under `scripts/automation/generated/` for packaging with the generated runbook.
+- Class matrix query: [docs/metabase/class_interaction_matrix.sql](../metabase/class_interaction_matrix.sql) (built from `interactions_enriched`, class values from normalized pair ids, heatmap-ready class pair rollups).
+- After `emit-bundle`, model files are written under `scripts/automation/generated/` for packaging with the generated runbook.
 
 Metabase UI steps and model naming: [docs/metabase/README.md](../metabase/README.md).
 

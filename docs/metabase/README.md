@@ -67,7 +67,18 @@ Once `interactions_enriched` exists as a Metabase model, downstream saved questi
 
 - **Substance risk profile**: `GROUP BY substance_1_id, substance_1_name` with `avg(risk_score)`, counts, `high` share — **union** both ends of the pair if you need undirected substance totals (or aggregate on `substance_1_id` only if you adopt a fixed undirected convention).
 - **Mechanism × risk**: `GROUP BY primary_mechanism_category, risk_severity_bucket` (or `risk_bucket`; same values).
-- **Class × class**: `GROUP BY substance_1_class, substance_2_class`.
+- **Class × class**: use **[class_interaction_matrix.sql](./class_interaction_matrix.sql)**. It starts from `interactions_enriched`, uses class values joined from normalized `LEAST` / `GREATEST` pair ids, and exposes `matrix_row_class` / `matrix_column_class` for heatmap axes.
+
+### `class_interaction_matrix` model (NEW-93)
+
+Use this when building class-level heatmaps or matrix-style charts.
+
+1. Make sure **`interactions_enriched`** exists first.
+2. **New** → **SQL query** → paste [class_interaction_matrix.sql](./class_interaction_matrix.sql).
+3. Run the query and save it as a model named **`class_interaction_matrix`**.
+4. Use **`matrix_row_class`** and **`matrix_column_class`** as the heatmap dimensions; use **`interaction_pair_count`**, **`avg_risk_score`**, or **`high_or_critical_pair_share`** as the metric.
+
+For Supabase view installs, run [supabase-install-class-interaction-matrix-view.sql](./supabase-install-class-interaction-matrix-view.sql) after [supabase-install-interactions-enriched-view.sql](./supabase-install-interactions-enriched-view.sql).
 
 ### Deprecated / legacy rows
 

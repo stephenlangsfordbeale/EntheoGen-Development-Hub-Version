@@ -6,6 +6,8 @@ new abstractions.
 
 Do not commit secrets, tokens, private keys, or live credentials. Use placeholder
 values in examples and documentation.
+For Doppler-first workspace layout (private hub repo, `doppler run`, keys never
+in git), follow `.cursor/skills/doppler-workspace/SKILL.md`.
 
 Do not revert user or branch changes unless explicitly asked. If unrelated
 changes are present, leave them alone; if they affect the task, work with them

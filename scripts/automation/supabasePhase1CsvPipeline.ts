@@ -6,7 +6,7 @@
  * beta dataset build expects).
  *
  * **emit-bundle** — Refreshes `scripts/automation/generated/` (Metabase model
- * copy + runbook) without touching the database.
+ * copies + runbook) without touching the database.
  *
  * **all** — `export` then `emit-bundle`.
  *
@@ -168,9 +168,17 @@ function emitBundle(): void {
   const genDir = path.join(root, 'scripts', 'automation', 'generated');
   fs.mkdirSync(genDir, { recursive: true });
 
-  const enrichedSrc = path.join(root, 'docs', 'metabase', 'interactions_enriched.sql');
-  const enrichedDst = path.join(genDir, 'interactions_enriched.sql');
-  fs.copyFileSync(enrichedSrc, enrichedDst);
+  const metabaseModels = [
+    'interactions_enriched.sql',
+    'class_interaction_matrix.sql'
+  ] as const;
+
+  for (const model of metabaseModels) {
+    fs.copyFileSync(
+      path.join(root, 'docs', 'metabase', model),
+      path.join(genDir, model)
+    );
+  }
 
   const legacyV2 = path.join(genDir, 'interactions_enriched_v2.sql');
   if (fs.existsSync(legacyV2)) {
@@ -178,7 +186,9 @@ function emitBundle(): void {
   }
 
   const rel = (p: string) => path.relative(root, p);
-  console.log(`Wrote ${rel(enrichedDst)}`);
+  for (const model of metabaseModels) {
+    console.log(`Wrote ${rel(path.join(genDir, model))}`);
+  }
   console.log(
     'See docs/automation/SUPABASE_PHASE1_CSV_PIPELINE.md for backup → staging → swap and Metabase guardrails.'
   );

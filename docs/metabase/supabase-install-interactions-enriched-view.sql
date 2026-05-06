@@ -18,7 +18,8 @@ drop view if exists public.interactions_enriched cascade;
 -- Definition must stay aligned with docs/metabase/interactions_enriched.sql
 -- (Metabase paste + Supabase Table Editor).
 
-create view public.interactions_enriched as
+create view public.interactions_enriched
+with (security_invoker = true) as
 select
   enriched.*,
   enriched.risk_severity_bucket as risk_bucket
@@ -92,7 +93,8 @@ comment on view public.interactions_enriched is
   'Phase 1 pair analytics (normalized LEAST/GREATEST, pair_key hygiene, risk buckets). Mirror docs/metabase/interactions_enriched.sql.';
 
 -- Legacy name used in older dashboards / Table Editor: same rows as canonical view.
-create view public.interactions_enriched_current as
+create view public.interactions_enriched_current
+with (security_invoker = true) as
 select * from public.interactions_enriched;
 
 comment on view public.interactions_enriched_current is
