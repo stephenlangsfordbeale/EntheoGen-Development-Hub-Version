@@ -641,6 +641,10 @@ const STIMULANT_IDS = new Set([
   'amphetamine_stims',
   'methylphenidate',
   'cocaine',
+  'mdma',
+  'two_c_x',
+  'dox',
+  'nbome_series',
   'mdma_2cx_dox_nbome',
   'ndri_bupropion',
   'tobacco_rape'
@@ -659,6 +663,10 @@ const SEROTONERGIC_IDS = new Set([
   'maoi_pharma',
   'atypical_ad',
   'serotonergic_opioids',
+  'mdma',
+  'two_c_x',
+  'dox',
+  'nbome_series',
   'mdma_2cx_dox_nbome'
 ]);
 

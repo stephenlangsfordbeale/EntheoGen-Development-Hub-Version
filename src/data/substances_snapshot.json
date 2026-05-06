@@ -112,6 +112,13 @@
     "notes": "Contraindication list item with ayahuasca in source slides."
   },
   {
+    "id": "dox",
+    "name": "DOx",
+    "class": "Recreational Serotonergic",
+    "mechanismTag": "Psychedelic amphetamine series",
+    "notes": "Split from legacy aggregate node mdma_2cx_dox_nbome."
+  },
+  {
     "id": "five_meo_dmt",
     "name": "5-MeO-DMT",
     "class": "Ceremonial Psychedelic",
@@ -168,11 +175,22 @@
     "notes": "Major contraindication category around ayahuasca and serotonergic combinations."
   },
   {
+    "id": "mdma",
+    "name": "MDMA",
+    "class": "Recreational Serotonergic",
+    "mechanismTag": "Serotonergic entactogen",
+    "notes": "Split from legacy aggregate node mdma_2cx_dox_nbome."
+  },
+  {
     "id": "mdma_2cx_dox_nbome",
     "name": "MDMA / 2C-x / DOx / NBOMe",
     "class": "Recreational Serotonergic",
     "mechanismTag": "Serotonergic stimulant/psychedelic cluster",
-    "notes": "Contraindication cluster with ayahuasca in source slides."
+    "notes": "Contraindication cluster with ayahuasca in source slides. Deprecated after entactogen split into mdma, two_c_x, dox, nbome_series.",
+    "deprecated": true,
+    "supersededBy": [
+      "mdma"
+    ]
   },
   {
     "id": "mescaline_peyote",
@@ -187,6 +205,13 @@
     "class": "Pharmaceutical",
     "mechanismTag": "Catecholaminergic stimulant",
     "notes": "Contraindication list item with ayahuasca in source slides."
+  },
+  {
+    "id": "nbome_series",
+    "name": "NBOMe Series",
+    "class": "Recreational Serotonergic",
+    "mechanismTag": "NBOMe phenethylamine series",
+    "notes": "Split from legacy aggregate node mdma_2cx_dox_nbome."
   },
   {
     "id": "ndri_bupropion",
@@ -250,6 +275,13 @@
     "class": "Pharmaceutical Class",
     "mechanismTag": "Mixed monoamine reuptake effects",
     "notes": "Psilocybin chart: intensified effects; specific tricyclics listed as contraindicated with ayahuasca."
+  },
+  {
+    "id": "two_c_x",
+    "name": "2C-x",
+    "class": "Recreational Serotonergic",
+    "mechanismTag": "Phenethylamine psychedelic series",
+    "notes": "Split from legacy aggregate node mdma_2cx_dox_nbome."
   },
   {
     "id": "yopo",

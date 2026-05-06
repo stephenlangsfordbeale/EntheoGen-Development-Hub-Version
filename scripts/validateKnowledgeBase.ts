@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readdir, stat } from 'node:fs/promises';
 import {
   ensureDir,
+  getKnowledgeBasePaths,
   loadSchema,
   readJson,
   validateSchemaSubset,
@@ -48,15 +49,16 @@ const validateClaim = (claim: ClaimRecord, claimSchema: Record<string, unknown>)
 };
 
 const run = async (): Promise<void> => {
-  const kbRoot = process.env.KB_ROOT ?? path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'knowledge-base');
-  const indexesDir = process.env.KB_INDEXES_DIR ?? path.join(kbRoot, 'indexes');
-  const pendingDir = process.env.KB_PENDING_DIR ?? path.join(kbRoot, 'extracted', 'claims', 'pending');
-  const reviewedDir = process.env.KB_REVIEWED_DIR ?? path.join(kbRoot, 'extracted', 'claims', 'reviewed');
-  const rejectedDir = process.env.KB_REJECTED_DIR ?? path.join(kbRoot, 'extracted', 'claims', 'rejected');
-  const sourceManifestPath = process.env.KB_SOURCE_MANIFEST_PATH ?? path.join(indexesDir, 'source_manifest.json');
-  const claimSchemaPath = process.env.KB_CLAIM_SCHEMA_PATH ?? path.join(kbRoot, 'schemas', 'claim.schema.json');
-  const sourceSchemaPath = process.env.KB_SOURCE_SCHEMA_PATH ?? path.join(kbRoot, 'schemas', 'source.schema.json');
-  const datasetPath = process.env.KB_DATASET_PATH ?? path.resolve(kbRoot, '..', 'src', 'data', 'interactionDatasetV2.json');
+  const kbPaths = getKnowledgeBasePaths();
+  const kbRoot = kbPaths.root;
+  const indexesDir = kbPaths.indexesDir;
+  const pendingDir = kbPaths.pendingDir;
+  const reviewedDir = kbPaths.reviewedDir;
+  const rejectedDir = kbPaths.rejectedDir;
+  const sourceManifestPath = kbPaths.sourceManifestPath;
+  const claimSchemaPath = kbPaths.claimSchemaPath;
+  const sourceSchemaPath = kbPaths.sourceSchemaPath;
+  const datasetPath = kbPaths.datasetPath;
 
   await ensureDir(indexesDir);
 

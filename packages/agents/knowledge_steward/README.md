@@ -56,4 +56,8 @@ npm test
 - The verifier checks structure and enum compatibility, not scientific truth.
 - Duplicate/conflict detection is a draft signal for reviewers, not an
   automated rejection or merge decision.
+- Canonical duplicate pair rules and consolidation merge reporting live in
+  repo scripts (`scripts/validateInteractionsV2.ts`,
+  `scripts/consolidateJsonUpdates.ts`); there is no `packages/agents/deduplication/`
+  runtime in this repository.
 - A valid draft can still require source review before any dataset update.

@@ -196,6 +196,19 @@ const run = async (): Promise<void> => {
 
   const payload = asObject(recordDraftExample.payload, 'example.record_draft.payload');
   const requestedChange = asObject(payload.requested_change, 'example.record_draft.payload.requested_change');
+  requireKeys(
+    requestedChange,
+    [
+      'clinical_summary.headline',
+      'clinical_summary.mechanism',
+      'clinical_summary.timing_guidance',
+      'clinical_summary.field_notes'
+    ],
+    'example.record_draft.payload.requested_change'
+  );
+  if ('clinical_summary.practical_guidance' in requestedChange) {
+    throw new Error('example requested_change must use clinical_summary.field_notes instead of stale practical_guidance');
+  }
   assertSubset([String(requestedChange['classification.code'])], INTERACTION_CODES_V2, 'example classification.code');
   assertSubset([String(requestedChange['classification.confidence'])], CONFIDENCE_LEVELS, 'example classification.confidence');
   assertSubset([String(requestedChange['mechanism.primary_category'])], MECHANISM_CATEGORIES_V2, 'example mechanism.primary_category');

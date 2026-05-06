@@ -434,7 +434,7 @@ export default function App() {
       setSummary(profile);
     } catch (err) {
       console.error("Readout error:", err);
-      setError("We couldn't render the interaction readout. Please retry.");
+      setError("We couldn't build the rule-based readout. Please retry.");
     }
     setIsLoadingSummary(false);
   };

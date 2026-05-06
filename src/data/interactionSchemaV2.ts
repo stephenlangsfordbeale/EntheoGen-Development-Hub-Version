@@ -289,6 +289,8 @@ export interface SubstanceV2 {
   class?: string;
   mechanism_tag?: string;
   notes?: string;
+  deprecated?: boolean;
+  superseded_by?: string[];
 }
 
 export interface InteractionPairV2 {

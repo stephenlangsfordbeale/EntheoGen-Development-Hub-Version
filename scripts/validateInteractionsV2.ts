@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getCanonicalDatasetSourcePaths } from './datasetPaths';
 import {
   CONFIDENCE_LEVELS,
   DERIVATION_TYPES,
@@ -23,7 +24,7 @@ import { groupValidationFlags, VALIDATION_FLAG_SEVERITY } from '../src/data/evid
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
-const datasetPath = process.env.INTERACTION_DATASET_V2_PATH ?? path.join(root, 'src/data/interactionDatasetV2.json');
+const datasetPath = process.env.INTERACTION_DATASET_V2_PATH ?? getCanonicalDatasetSourcePaths(root).interactionDatasetV2;
 
 const expectedRiskByCode: Record<string, number | null> = {
   SELF: -1,

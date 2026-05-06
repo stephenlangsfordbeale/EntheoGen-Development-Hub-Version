@@ -8,12 +8,22 @@ import type {
   EvidenceTierV2,
   InteractionCodeV2,
   InteractionDatasetV2,
-  MechanismCategoryV2,
-  SourceClaimRefV2
+  MechanismCategoryV2
 } from '../src/data/interactionSchemaV2';
+import { getCanonicalDatasetSourcePaths } from './datasetPaths';
+import type { WorkflowState } from './workflow/stateMachine';
 
 type ProposalStatus = 'proposed';
 type ParseConfidence = Exclude<ConfidenceLevel, 'none' | 'not_applicable'>;
+type ProposalCreator = 'manual_nl_report';
+
+interface ProposalSourceRef {
+  source_id: string;
+  claim_support: EvidenceSupportType;
+  support_type?: EvidenceSupportType;
+  locator?: string;
+  quote?: string;
+}
 
 interface ReportSection {
   heading: string;
@@ -24,9 +34,10 @@ interface ReportSection {
 interface InteractionUpdateProposal {
   update_id: string;
   created_at: string;
+  created_by: ProposalCreator;
   pair: [string, string];
   claim: string;
-  source_refs: SourceClaimRefV2[];
+  source_refs: ProposalSourceRef[];
   requested_change: {
     'classification.code': InteractionCodeV2;
     'classification.confidence': ParseConfidence;
@@ -37,12 +48,16 @@ interface InteractionUpdateProposal {
     'evidence.support_type': EvidenceSupportType[];
     'evidence.evidence_gaps': string;
     'clinical_summary.mechanism'?: string;
-    'clinical_summary.practical_guidance'?: string;
+    'clinical_summary.field_notes'?: string;
     'clinical_summary.timing_guidance'?: string;
   };
   reviewer_notes?: string;
   rationale: string;
   status: ProposalStatus;
+  workflow: {
+    state: WorkflowState;
+    transition_history: [];
+  };
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,7 +66,7 @@ const incomingDir = path.join(root, 'src/curation/nl-reports/incoming');
 const parsedDir = path.join(root, 'src/curation/nl-reports/parsed');
 const failedDir = path.join(root, 'src/curation/nl-reports/failed');
 const outputJsonl = path.join(root, 'src/curation/interaction-updates.jsonl');
-const datasetPath = path.join(root, 'src/data/interactionDatasetV2.json');
+const datasetPath = getCanonicalDatasetSourcePaths(root).interactionDatasetV2;
 
 let substanceIdSet = new Set<string>();
 let substanceAliasMap = new Map<string, string>();
@@ -334,6 +349,14 @@ export function extractMechanismText(text: string): string | null {
   return fallback || (merged ? merged.slice(0, 1200) : null);
 }
 
+export function extractClaimSummary(text: string, fallbackHeadline: string): string {
+  const beforeDataset = text.split(/dataset-ready interaction entry/i)[0] ?? text;
+  const preferred = sentences(beforeDataset).find((s) => /best rated as|best classified as|driven mainly by|risk/i.test(s));
+  const fallback = sentences(beforeDataset)[0] ?? fallbackHeadline;
+  const chosen = preferred ?? fallback;
+  return chosen.replace(/\s+/g, ' ').trim().slice(0, 280);
+}
+
 const categoryRules: Array<{ category: MechanismCategoryV2; patterns: RegExp[] }> = [
   { category: 'serotonergic_toxicity', patterns: [/serotonin syndrome/i, /serotonergic toxicity/i, /serotonergic/i, /\bssri\b/i, /\bsnri\b/i, /\bmaoi\b/i, /\btca\b/i, /\bmdma\b/i, /linezolid/i, /tramadol/i, /meperidine/i, /pethidine/i, /tapentadol/i, /dextromethorphan/i, /fentanyl/i, /methadone/i] },
   { category: 'maoi_potentiation', patterns: [/\bmaoi\b/i, /mao-a/i, /harmala/i, /harmine/i, /harmaline/i, /ayahuasca/i, /reversible mao inhibition/i] },
@@ -437,8 +460,8 @@ export function extractTimingGuidance(text: string): string | null {
   return timing || null;
 }
 
-export function extractSourceRefs(text: string): SourceClaimRefV2[] {
-  const refs: SourceClaimRefV2[] = [];
+export function extractSourceRefs(text: string): ProposalSourceRef[] {
+  const refs: ProposalSourceRef[] = [];
   const bracketed = [...text.matchAll(/\[(?:source|source_id)\s*:\s*([a-z0-9_\-]+)\]/gi)].map((m) => cleanToken(m[1]));
   const labeled = text
     .split(/\r?\n/)
@@ -448,17 +471,40 @@ export function extractSourceRefs(text: string): SourceClaimRefV2[] {
     .filter(Boolean);
 
   for (const sourceId of [...bracketed, ...labeled]) {
-    refs.push({ source_id: sourceId, support_type: 'indirect' });
+    refs.push({ source_id: sourceId, claim_support: 'indirect', support_type: 'indirect' });
   }
 
-  if (!refs.length) return [{ source_id: 'source_gap', support_type: 'mechanistic' }];
+  if (!refs.length) return [{ source_id: 'source_gap', claim_support: 'mechanistic', support_type: 'mechanistic' }];
 
-  const unique = new Map<string, SourceClaimRefV2>();
+  const unique = new Map<string, ProposalSourceRef>();
   for (const ref of refs) unique.set(ref.source_id, ref);
   return Array.from(unique.values());
 }
 
 const shortHash = (value: string): string => createHash('sha1').update(value).digest('hex').slice(0, 6);
+
+const dedupeNonEmpty = (values: string[]): string[] => Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+
+const formatReviewerNotes = (sections: {
+  extracted: string[];
+  inferred: string[];
+  uncertainty: string[];
+  draftOnly: string[];
+}): string => {
+  const extracted = dedupeNonEmpty(sections.extracted);
+  const inferred = dedupeNonEmpty(sections.inferred);
+  const uncertainty = dedupeNonEmpty(sections.uncertainty);
+  const draftOnly = dedupeNonEmpty(sections.draftOnly);
+
+  const extractedText = extracted.length ? extracted.join(' ') : 'No explicit extracted facts were captured from the source text.';
+  const inferredText = inferred.length ? inferred.join(' ') : 'No inferred suggestions were generated.';
+  const uncertaintyText = uncertainty.length ? uncertainty.join(' ') : 'No additional uncertainty note was captured.';
+  const draftOnlyText = draftOnly.length
+    ? draftOnly.join(' ')
+    : 'Draft-only output; requires human review before any downstream use.';
+
+  return `Extracted: ${extractedText} Inferred: ${inferredText} Uncertainty: ${uncertaintyText} Draft-only: ${draftOnlyText}`;
+};
 
 export async function initParserContext(): Promise<void> {
   const raw = await readFile(datasetPath, 'utf8');
@@ -494,7 +540,7 @@ export function buildUpdateProposal(reportText: string, filename: string): Inter
   const code = extractClassification(normalized);
   const headline = extractHeadline(normalized);
   const mechanism = extractMechanismText(normalized);
-  const practicalGuidance = extractActionGuidance(normalized);
+  const fieldNotes = extractActionGuidance(normalized);
   const timingGuidance = extractTimingGuidance(normalized);
   const mechanismCategories = inferMechanismCategories(normalized);
   const mechanismPrimary = mechanismCategories[0] ?? 'unknown';
@@ -504,21 +550,45 @@ export function buildUpdateProposal(reportText: string, filename: string): Inter
   const evidenceGaps = extractEvidenceGaps(normalized) ?? 'Direct clinical data specifically on this pair are very limited; estimate is extrapolated from related literature.';
 
   let confidence = extractConfidence(normalized);
-  const reviewerNotes: string[] = [];
+  const extractedNotes: string[] = [];
+  const inferredNotes: string[] = [];
+  const uncertaintyNotes: string[] = [];
+  const draftOnlyNotes: string[] = [];
 
   const sourceGapOnly = sourceRefs.every((ref) => ref.source_id === 'source_gap');
+  if (sourceGapOnly) {
+    extractedNotes.push('No structured source IDs were present in the report (`source_gap` fallback).');
+  } else {
+    extractedNotes.push(`Structured source IDs captured: ${sourceRefs.map((ref) => ref.source_id).join(', ')}.`);
+  }
+  extractedNotes.push(`Pair extracted from report: ${pair[0]} x ${pair[1]}.`);
+
+  inferredNotes.push(`Candidate classification: ${code}.`);
+  inferredNotes.push(`Candidate confidence: ${confidence}.`);
+  inferredNotes.push(`Candidate primary mechanism category: ${mechanismPrimary}.`);
+  inferredNotes.push(`Candidate evidence tier: ${evidenceTier}.`);
+
   if (sourceGapOnly && confidence === 'high') confidence = 'medium';
   if (/direct clinical data specifically|very limited direct data|exact pair.*limited/i.test(normalized) && confidence === 'high') {
     confidence = 'medium';
-    reviewerNotes.push('Confidence capped at medium because direct evidence for the exact pair is limited.');
+    uncertaintyNotes.push('Confidence capped at medium because direct evidence for the exact pair is limited.');
+  }
+  if (/no direct data|very limited|limited direct data|exact pair.*limited|extrapolated|conflicting|speculative|source_gap/i.test(normalized)) {
+    uncertaintyNotes.push(
+      'Direct evidence for the exact pair is limited; interpretation includes mechanistic or extrapolated reasoning.'
+    );
   }
   if (['CAUTION', 'UNSAFE', 'DANGEROUS'].includes(code) && sourceGapOnly) {
-    reviewerNotes.push('NLP-derived risk classification lacks structured source refs; requires review before application.');
+    uncertaintyNotes.push('Risk classification lacks structured source refs and requires curator review before application.');
   }
   if (code === 'DANGEROUS' && confidence === 'high' && supportTypes.includes('indirect') && !supportTypes.includes('direct')) {
     confidence = 'medium';
-    reviewerNotes.push('High-confidence dangerous classification downgraded to medium due to indirect evidence.');
+    uncertaintyNotes.push('High-confidence dangerous classification was downgraded to medium due to indirect-only evidence.');
   }
+  inferredNotes.push(`Candidate confidence after guardrails: ${confidence}.`);
+  draftOnlyNotes.push('Draft summary generated from a natural-language report.');
+  draftOnlyNotes.push('Humans must approve interpretation and any downstream use.');
+  draftOnlyNotes.push('This output does not grant publication or approval authority.');
 
   const pairKey = `${pair[0]}_${pair[1]}`;
   const updateId = `nl_${pairKey}_${shortHash(`${pair.join('|')}|${cleanToken(headline)}|${filename}`)}`;
@@ -526,8 +596,9 @@ export function buildUpdateProposal(reportText: string, filename: string): Inter
   const proposal: InteractionUpdateProposal = {
     update_id: updateId,
     created_at: new Date().toISOString(),
+    created_by: 'manual_nl_report',
     pair,
-    claim: 'Natural language ingestion',
+    claim: extractClaimSummary(normalized, headline),
     source_refs: sourceRefs,
     requested_change: {
       'classification.code': code,
@@ -540,13 +611,22 @@ export function buildUpdateProposal(reportText: string, filename: string): Inter
       'evidence.evidence_gaps': evidenceGaps
     },
     rationale: reportText,
-    status: 'proposed'
+    status: 'proposed',
+    workflow: {
+      state: 'submitted',
+      transition_history: []
+    }
   };
 
   if (mechanism) proposal.requested_change['clinical_summary.mechanism'] = mechanism;
-  if (practicalGuidance) proposal.requested_change['clinical_summary.practical_guidance'] = practicalGuidance;
+  if (fieldNotes) proposal.requested_change['clinical_summary.field_notes'] = fieldNotes;
   if (timingGuidance) proposal.requested_change['clinical_summary.timing_guidance'] = timingGuidance;
-  if (reviewerNotes.length) proposal.reviewer_notes = reviewerNotes.join(' ');
+  proposal.reviewer_notes = formatReviewerNotes({
+    extracted: extractedNotes,
+    inferred: inferredNotes,
+    uncertainty: uncertaintyNotes,
+    draftOnly: draftOnlyNotes
+  });
 
   if (!proposal.requested_change['clinical_summary.headline']) throw new Error('Proposal validation failed: missing required headline.');
   return proposal;

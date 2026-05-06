@@ -140,6 +140,10 @@ EntheoGen/
 |-- docs/                             # contributor and project documentation
 |   |-- REPO_LAYOUT.md                # this repository layout guide
 |   |-- AUTOMATION_WORKFLOW.md        # automation scope and review boundaries
+|   |-- automation/
+|   |   |-- SUBMISSION_HOW_TO.md       # contributor/model/agent submission guide
+|   |   |-- SUBMISSION_INTAKE_FLOW.md  # standard file-first intake path
+|   |   `-- RAPID_MANUAL_INTAKE.md    # urgent manual interaction intake path
 |   `-- assets/                       # README/demo/release media
 |
 |-- public/                           # static files served by the app
@@ -147,6 +151,7 @@ EntheoGen/
 |
 |-- .github/                          # GitHub metadata and CI/CD
 |   |-- FUNDING.yml
+|   |-- PULL_REQUEST_TEMPLATE.md
 |   |-- copilot-instructions.md
 |   |-- ISSUE_TEMPLATE/
 |   `-- workflows/
@@ -177,7 +182,8 @@ EntheoGen/
   `src/data/interactionDatasetV2.json`, adapter modules such as
   `src/data/uiInteractions.ts`, and exported interaction artifacts.
 - Scripts move data between those surfaces. The usual verification commands are
-  `npm run kb:validate`, `npm run validate:interactions:v2`, and `npm run lint`.
+  `npm run kb:validate`, `npm run validate:interactions:v2`, and
+  `npm run typecheck`.
 
 ## Practical Data Path
 
@@ -209,8 +215,8 @@ knowledge-base/sources/
 - New paths named in docs exist in the repo or are clearly marked as planned.
 - Source-surface changes under `knowledge-base/` pass `npm run kb:validate`.
 - App data changes under `src/data/` pass `npm run validate:interactions:v2`.
-- TypeScript or UI behavior changes pass `npm run lint`, plus focused tests when
-  a touched script already has a test entry.
+- TypeScript or UI behavior changes pass `npm run typecheck`, plus focused
+  tests when a touched script already has a test entry.
 
 ## Residual Limits
 

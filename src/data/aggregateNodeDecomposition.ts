@@ -1,4 +1,5 @@
 export const AGGREGATE_NODE_SPLITS = {
+  mdma_2cx_dox_nbome: ['mdma', 'two_c_x', 'dox', 'nbome_series'],
   clonidine_guanfacine: ['clonidine', 'guanfacine'],
   beta_blockers_ccb: ['beta_blockers', 'calcium_channel_blockers']
 } as const;

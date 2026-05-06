@@ -1,6 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "entheogen",
+  // Rapid/manual submission intake is repository-file-first, not a Worker API
+  // route. See docs/automation/SUBMISSION_HOW_TO.md before adding runtime
+  // submission endpoints or deployment-side mutation behavior.
   "compatibility_date": "2026-04-05",
   "observability": {
     "enabled": true

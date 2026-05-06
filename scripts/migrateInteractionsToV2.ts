@@ -54,6 +54,8 @@ interface DrugRow {
   class?: string;
   mechanismTag?: string;
   notes?: string;
+  deprecated?: boolean;
+  supersededBy?: string[];
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -149,6 +151,10 @@ const serotonergicPartnerIds = new Set([
   'maoi_pharma',
   'atypical_ad',
   'serotonergic_opioids',
+  'mdma',
+  'two_c_x',
+  'dox',
+  'nbome_series',
   'mdma_2cx_dox_nbome'
 ]);
 
@@ -161,7 +167,57 @@ const hemodynamicPartnerIds = new Set([
   'clonidine_guanfacine',
   'guanfacine'
 ]);
-const stimulantPartnerIds = new Set(['amphetamine_stims', 'methylphenidate', 'cocaine', 'ndri_bupropion', 'mdma_2cx_dox_nbome']);
+const stimulantPartnerIds = new Set([
+  'amphetamine_stims',
+  'methylphenidate',
+  'cocaine',
+  'ndri_bupropion',
+  'mdma',
+  'two_c_x',
+  'dox',
+  'nbome_series',
+  'mdma_2cx_dox_nbome'
+]);
+
+const seededSourceIds = [
+  'alcohol_org_mushrooms_alcohol',
+  'alma_ayahuasca_medication_interactions_2025',
+  'avenues_shrooms_alcohol_risks',
+  'ayahuasca_pharmacological_interaction_pmc',
+  'beta_blockers_statpearls',
+  'blossom_cannabis_psychedelic_survey',
+  'cannabis_psychedelic_experience_escholarship',
+  'cannabis_psychedelic_experience_pmc',
+  'cannabis_psychedelic_experience_pubmed',
+  'cardiovascular_safety_psychedelic_medicine_2023',
+  'choosingtherapy_psilocybin_alcohol',
+  'classic_psychedelic_ddi_review_2024',
+  'classic_psychedelics_aud_systematic_review_pmc',
+  'classic_psychedelics_aud_systematic_review_pubmed',
+  'entheogen_interactions_research_update',
+  'frontiers_low_dose_psilocybin_ketamine_motivation',
+  'healthline_mushrooms_cannabis_interaction',
+  'human_heart_hallucinogenic_drugs_2024',
+  'ketamine_maoi_augmentation_safety_pubmed',
+  'ketamine_maoi_concurrent_use_pmc',
+  'ketamine_norepinephrine_pmc',
+  'ketamine_psychiatric_medication_interactions_ijnp',
+  'ketamine_serotonergic_psychedelics_common_mechanisms_ijnp',
+  'ketamine_serotonergic_psychedelics_common_mechanisms_pmc',
+  'leafwell_lsd_weed',
+  'lucy_in_the_sky_with_ketamine_pmc',
+  'malcolm_ayahuasca_drug_interaction_2022',
+  'muse_lsd_marijuana_risks',
+  'not_available',
+  'overview_psilocybin_lsd_mdma_ketamine_2025',
+  'psilocybin_clinicians_guide_interactions',
+  'psilocybin_ketamine_neurotransmitters_pmc',
+  'psilocybin_ssri_interaction_chart',
+  'psychiatric_times_cannabis_psychedelics_memory',
+  'recovered_psilocybin_other_drugs',
+  'source_gap',
+  'whitesands_shrooms_alcohol_risks'
+] as const;
 
 const deriveMechanismCategoriesFromPair = (a: string, b: string, textCategories: string[]): MechanismCategoryV2[] => {
   const ids = [a, b];
@@ -314,7 +370,11 @@ const run = async (): Promise<void> => {
   const aggregateNodeIds = ['clonidine_guanfacine', 'beta_blockers_ccb'] as const;
   const aggregateChildIds = aggregateNodeIds.flatMap((id) => splitAggregateNode(id));
   const allIds = Array.from(
-    new Set([...pairsV1.flatMap((row) => [row.substance_a_id, row.substance_b_id]), ...aggregateChildIds])
+    new Set([
+      ...DRUGS.map((row) => row.id),
+      ...pairsV1.flatMap((row) => [row.substance_a_id, row.substance_b_id]),
+      ...aggregateChildIds
+    ])
   ).sort();
   const drugById = new Map(DRUGS.map((row) => [row.id, row] as const));
 
@@ -325,12 +385,14 @@ const run = async (): Promise<void> => {
       name: drug?.name ?? id,
       class: drug?.class,
       mechanism_tag: drug?.mechanismTag,
-      notes: drug?.notes
+      notes: drug?.notes,
+      deprecated: drug?.deprecated,
+      superseded_by: drug?.supersededBy
     };
   });
 
   const sourceFingerprintById = new Map<string, string>();
-  const discoveredSources = new Set<string>();
+  const discoveredSources = new Set<string>(seededSourceIds);
   const pairRecords: InteractionPairV2[] = [];
   const seenActivePairKeys = new Set<string>();
 
@@ -359,7 +421,7 @@ const run = async (): Promise<void> => {
     const resolved = resolveInteraction(substanceA, substanceB);
     const evidence = resolved.evidence;
     const confidence = toConfidence(evidence.confidence);
-    const evidenceTier = toEvidenceTier(evidence.evidenceTier ?? row.evidence_tier);
+    let evidenceTier = toEvidenceTier(evidence.evidenceTier ?? row.evidence_tier);
     let code: InteractionCodeV2 =
       evidence.code === 'SELF'
         ? 'SELF'
@@ -370,6 +432,11 @@ const run = async (): Promise<void> => {
             : (codeMap[evidence.code] ?? 'UNKNOWN');
     if (code === 'UNKNOWN' && substanceA !== substanceB) {
       code = 'INFERRED';
+    }
+    if (code === 'THEORETICAL') {
+      evidenceTier = 'theoretical';
+    } else if (code === 'INFERRED' && evidenceTier === 'not_applicable') {
+      evidenceTier = 'mechanistic_inference';
     }
     const mechanismScanText = [
       evidence.mechanism,
@@ -404,8 +471,15 @@ const run = async (): Promise<void> => {
 
     registerSources(row, sourceRefIds.length ? sourceRefIds : ['source_gap']);
 
+    const inferredOrTheoreticalSource =
+      code === 'INFERRED'
+        ? 'heuristic_fallback'
+        : code === 'THEORETICAL'
+          ? 'mechanistic_inference'
+          : undefined;
     const provenanceSource =
       options.provenanceSource ??
+      inferredOrTheoreticalSource ??
       evidence.provenance?.source ??
       (resolved.origin === 'self'
         ? 'self_pair'
@@ -429,6 +503,8 @@ const run = async (): Promise<void> => {
         ? 'decomposition'
         : resolved.origin === 'self'
           ? 'self_pair'
+          : code === 'INFERRED'
+            ? 'fallback_rule'
           : code === 'THEORETICAL'
             ? 'curated_inference'
             : resolved.origin === 'explicit'

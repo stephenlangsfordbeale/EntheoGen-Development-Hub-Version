@@ -48,6 +48,8 @@
         "classification.confidence": "low",
         "clinical_summary.headline": "Caution due to additive sedation and limited direct evidence",
         "clinical_summary.mechanism": "Ketamine-related dissociation may compound CNS depression from opioid co-use; serotonergic opioids can add serotonergic load in broader stacks.",
+        "clinical_summary.timing_guidance": "Monitor during and after overlapping effects because respiratory depression may emerge as sedation deepens.",
+        "clinical_summary.field_notes": "Avoid unsupervised or recreational high-dose co-use. Avoid combining with other depressants, and strongly avoid stacking multiple serotonergic agents. In clinical settings monitor consciousness, respiratory rate, oxygen saturation, blood pressure, heart rate, and temperature.",
         "mechanism.primary_category": "cns_depression",
         "mechanism.categories": [
           "cns_depression",

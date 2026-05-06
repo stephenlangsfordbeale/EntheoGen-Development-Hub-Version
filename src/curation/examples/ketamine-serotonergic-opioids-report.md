@@ -17,5 +17,7 @@ Ketamine is primarily an NMDA antagonist and is not a typical serotonin-syndrome
 ## Action posture
 Avoid unsupervised or recreational high-dose co-use. Avoid combining with other depressants, and strongly avoid stacking multiple serotonergic agents. In clinical settings monitor consciousness, respiratory rate, oxygen saturation, blood pressure, heart rate, and temperature. Seek urgent care for serotonin-syndrome signs or respiratory depression.
 
+Monitor during and after overlapping effects because respiratory depression may emerge as sedation deepens.
+
 ## Evidence confidence
 Overall: MEDIUM. Direct clinical data specifically on ketamine plus serotonergic opioids causing serotonin syndrome are very limited; risk estimate is extrapolated from serotonergic opioid-antidepressant literature and general opioid-sedative harm-reduction principles.

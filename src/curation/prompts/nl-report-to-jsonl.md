@@ -40,6 +40,16 @@ Do not:
 - Use existing pair IDs/substance IDs from the dataset when available.
 - If no structured source IDs exist, use `"source_gap"`.
 - Preserve uncertainty conservatively.
+- Keep output explicitly draft/reviewable and never frame it as final authority.
+- Use `reviewer_notes` with explicit section labels in this order:
+  `Extracted: ... Inferred: ... Uncertainty: ... Draft-only: ...`
+  so extracted facts, inferred suggestions, and uncertainty remain separated.
+- Use current dataset-facing summary fields: `clinical_summary.headline`,
+  `clinical_summary.mechanism`, `clinical_summary.timing_guidance`, and
+  `clinical_summary.field_notes`.
+- Put reviewer-facing action posture, monitoring, and practical cautions in
+  `clinical_summary.field_notes`; do not emit the stale
+  `clinical_summary.practical_guidance` key.
 
 ## Required JSON shape
 
@@ -62,7 +72,8 @@ Do not:
     "classification.confidence": "medium",
     "clinical_summary.headline": "...",
     "clinical_summary.mechanism": "...",
-    "clinical_summary.practical_guidance": "...",
+    "clinical_summary.timing_guidance": "...",
+    "clinical_summary.field_notes": "...",
     "mechanism.primary_category": "...",
     "mechanism.categories": ["..."],
     "evidence.tier": "...",
@@ -70,8 +81,12 @@ Do not:
     "evidence.evidence_gaps": "..."
   },
   "rationale": "<condensed rationale from report>",
-  "reviewer_notes": "<anything needing human review>",
-  "status": "proposed"
+  "reviewer_notes": "Extracted: <source-grounded facts>. Inferred: <candidate interpretation/suggestions>. Uncertainty: <limitations, evidence gaps, ambiguity>. Draft-only: <human approval required; no publication authority>",
+  "status": "proposed",
+  "workflow": {
+    "state": "submitted",
+    "transition_history": []
+  }
 }
 
 ## Classification mapping

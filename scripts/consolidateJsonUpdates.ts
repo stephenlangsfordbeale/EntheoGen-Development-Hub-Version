@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { getCanonicalDatasetPaths } from './datasetPaths';
 
 type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
@@ -15,6 +16,65 @@ type PairRecord = Record<string, unknown> & {
   mechanism?: string[] | string;
   risk?: string;
   classification?: string | Record<string, unknown>;
+};
+
+type DuplicateSignalType =
+  | 'existing_pair_match'
+  | 'source_ref_deduplicated'
+  | 'citation_deduplicated'
+  | 'claim_deduplicated';
+
+export type DuplicateSignal = {
+  signal: DuplicateSignalType;
+  detail: string;
+  update_file?: string;
+  pair_key?: string;
+  source_id?: string;
+  review_required_by: ['Data Curator'];
+  requires_human_review: true;
+};
+
+export type ReviewConflict = {
+  category: 'candidate_insert_blocked' | 'source_manifest_gap' | 'archive_failure';
+  reason_code: string;
+  message: string;
+  severity: 'warning' | 'error';
+  update_file?: string;
+  pair_key?: string;
+  source_id?: string;
+  detail?: string;
+  suggested_review_action: string;
+  review_required_by: ['Data Curator'];
+  requires_human_review: true;
+  auto_resolution_applied: false;
+};
+
+type DuplicateSignalCounts = {
+  existing_pair_matches: number;
+  source_ref_duplicates_suppressed: number;
+  citation_duplicates_suppressed: number;
+  claim_duplicates_suppressed: number;
+};
+
+export type ConsolidationReport = {
+  generated_at: string;
+  canonical_files_detected: typeof canonical;
+  update_files_absorbed: string[];
+  interaction_records_inserted: number;
+  interaction_records_merged: number;
+  source_manifest_entries_inserted: number;
+  source_manifest_entries_merged: number;
+  citations_inserted: number;
+  citations_merged: number;
+  schema_changes_made: string[];
+  claims_normalized: number;
+  conflicts_detected: string[];
+  review_conflicts: ReviewConflict[];
+  duplicate_signals: DuplicateSignal[];
+  duplicate_signal_counts: DuplicateSignalCounts;
+  files_archived: string[];
+  validation_results: Record<string, unknown>;
+  unresolved_assumptions: string[];
 };
 
 type InteractionDataset = {
@@ -45,13 +105,14 @@ type ClaimPackage = {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
+const canonicalPaths = getCanonicalDatasetPaths(root);
 const canonical = {
-  interactions: path.join(root, 'src/data/interactionDatasetV2.json'),
-  sourceManifest: path.join(root, 'knowledge-base/indexes/source_manifest.json'),
-  sourceTags: path.join(root, 'knowledge-base/indexes/source_tags.json'),
-  citationRegistry: path.join(root, 'knowledge-base/indexes/citation_registry.json'),
-  sourceSchema: path.join(root, 'knowledge-base/schemas/source.schema.json'),
-  claimSchema: path.join(root, 'knowledge-base/schemas/claim.schema.json')
+  interactions: canonicalPaths.interactionDatasetV2,
+  sourceManifest: canonicalPaths.sourceManifest,
+  sourceTags: canonicalPaths.sourceTags,
+  citationRegistry: canonicalPaths.citationRegistry,
+  sourceSchema: canonicalPaths.sourceSchema,
+  claimSchema: canonicalPaths.claimSchema
 };
 
 const updateCandidates = [
@@ -173,17 +234,59 @@ const buildRef = (rec: PairRecord): Record<string, unknown> | null => {
   };
 };
 
-const dedupeRefs = (refs: Array<Record<string, unknown>>): Array<Record<string, unknown>> => {
+const dedupeRefs = (
+  refs: Array<Record<string, unknown>>
+): { refs: Array<Record<string, unknown>>; duplicatesSuppressed: number } => {
   const seen = new Set<string>();
   const result: Array<Record<string, unknown>> = [];
+  let duplicatesSuppressed = 0;
   for (const ref of refs) {
     const key = String(ref.source_id ?? '') + '|' + String(ref.match_type ?? '') + '|' + String(ref.evidence_strength ?? '');
     if (!seen.has(key)) {
       seen.add(key);
       result.push(ref);
+    } else {
+      duplicatesSuppressed += 1;
     }
   }
-  return result;
+  return { refs: result, duplicatesSuppressed };
+};
+
+type ConflictTrackingReport = Pick<ConsolidationReport, 'conflicts_detected' | 'review_conflicts'>;
+type DuplicateTrackingReport = Pick<ConsolidationReport, 'duplicate_signals' | 'duplicate_signal_counts'>;
+
+export const recordConflict = (
+  report: ConflictTrackingReport,
+  legacyMessage: string,
+  details: Omit<ReviewConflict, 'review_required_by' | 'requires_human_review' | 'auto_resolution_applied'>
+): void => {
+  report.conflicts_detected.push(legacyMessage);
+  report.review_conflicts.push({
+    ...details,
+    review_required_by: ['Data Curator'],
+    requires_human_review: true,
+    auto_resolution_applied: false
+  });
+};
+
+const duplicateSignalCounterKey: Record<DuplicateSignalType, keyof DuplicateSignalCounts> = {
+  existing_pair_match: 'existing_pair_matches',
+  source_ref_deduplicated: 'source_ref_duplicates_suppressed',
+  citation_deduplicated: 'citation_duplicates_suppressed',
+  claim_deduplicated: 'claim_duplicates_suppressed'
+};
+
+export const recordDuplicateSignal = (
+  report: DuplicateTrackingReport,
+  signal: Omit<DuplicateSignal, 'review_required_by' | 'requires_human_review'>
+): void => {
+  report.duplicate_signals.push({
+    ...signal,
+    review_required_by: ['Data Curator'],
+    requires_human_review: true
+  });
+  const key = duplicateSignalCounterKey[signal.signal];
+  report.duplicate_signal_counts[key] += 1;
 };
 
 const run = async (): Promise<void> => {
@@ -193,22 +296,30 @@ const run = async (): Promise<void> => {
   const sourceSchema = await readJson<Record<string, unknown>>(canonical.sourceSchema);
   const claimSchema = await readJson<Record<string, unknown>>(canonical.claimSchema);
 
-  const report: Record<string, unknown> = {
+  const report: ConsolidationReport = {
     generated_at: new Date().toISOString(),
     canonical_files_detected: canonical,
-    update_files_absorbed: [] as string[],
+    update_files_absorbed: [],
     interaction_records_inserted: 0,
     interaction_records_merged: 0,
     source_manifest_entries_inserted: 0,
     source_manifest_entries_merged: 0,
     citations_inserted: 0,
     citations_merged: 0,
-    schema_changes_made: [] as string[],
+    schema_changes_made: [],
     claims_normalized: 0,
-    conflicts_detected: [] as string[],
-    files_archived: [] as string[],
-    validation_results: {} as Record<string, unknown>,
-    unresolved_assumptions: [] as string[]
+    conflicts_detected: [],
+    review_conflicts: [],
+    duplicate_signals: [],
+    duplicate_signal_counts: {
+      existing_pair_matches: 0,
+      source_ref_duplicates_suppressed: 0,
+      citation_duplicates_suppressed: 0,
+      claim_duplicates_suppressed: 0
+    },
+    files_archived: [],
+    validation_results: {},
+    unresolved_assumptions: []
   };
 
   const pairByKey = new Map<string, Record<string, unknown>>();
@@ -237,21 +348,56 @@ const run = async (): Promise<void> => {
       const existing = pairByKey.get(pairKey);
       if (!existing) {
         if (!pairArr || pairArr.length < 2) {
-          (report.conflicts_detected as string[]).push(`cannot_insert:${path.basename(filePath)}:${pairKey}:missing_pair_shape`);
+          const fileName = path.basename(filePath);
+          recordConflict(report, `cannot_insert:${fileName}:${pairKey}:missing_pair_shape`, {
+            category: 'candidate_insert_blocked',
+            reason_code: 'missing_pair_shape',
+            message: `Candidate record from ${fileName} could not be inserted because pair shape is incomplete.`,
+            severity: 'error',
+            update_file: fileName,
+            pair_key: pairKey,
+            suggested_review_action: 'Review candidate payload and provide canonical pair/substances fields before merge.'
+          });
           continue;
         }
         const a = String(pairArr[0]).toLowerCase();
         const b = String(pairArr[1]).toLowerCase();
         if (!substanceIds.has(a) || !substanceIds.has(b)) {
-          (report.conflicts_detected as string[]).push(`cannot_insert:${path.basename(filePath)}:${pairKey}:unknown_substance`);
+          const fileName = path.basename(filePath);
+          recordConflict(report, `cannot_insert:${fileName}:${pairKey}:unknown_substance`, {
+            category: 'candidate_insert_blocked',
+            reason_code: 'unknown_substance',
+            message: `Candidate record from ${fileName} references substances outside the canonical dataset.`,
+            severity: 'warning',
+            update_file: fileName,
+            pair_key: pairKey,
+            detail: `${a},${b}`,
+            suggested_review_action: 'Resolve substance mapping in curator review before adding a new pair.'
+          });
           continue;
         }
-        (report.conflicts_detected as string[]).push(`deferred_insert:${path.basename(filePath)}:${pairKey}:requires_full_record_shape`);
+        const fileName = path.basename(filePath);
+        recordConflict(report, `deferred_insert:${fileName}:${pairKey}:requires_full_record_shape`, {
+          category: 'candidate_insert_blocked',
+          reason_code: 'requires_full_record_shape',
+          message: `Candidate record from ${fileName} matched canonical keys but lacks full dataset record shape for insertion.`,
+          severity: 'warning',
+          update_file: fileName,
+          pair_key: pairKey,
+          suggested_review_action: 'Prepare a full canonical record in curator review before insert.'
+        });
         continue;
       }
 
       const isSelf = String((existing.classification as Record<string, unknown>)?.code ?? '') === 'SELF';
       if (isSelf) continue;
+      recordDuplicateSignal(report, {
+        signal: 'existing_pair_match',
+        detail: 'Candidate matched an existing canonical pair and was merged as a reviewable duplicate signal.',
+        update_file: path.basename(filePath),
+        pair_key: pairKey,
+        source_id: rec.source_id ? String(rec.source_id) : undefined
+      });
 
       const existingClassification = String((existing.classification as Record<string, unknown>)?.code ?? 'UNKNOWN');
       const targetCode = toDatasetCode(rec.upgrade_to ?? (typeof rec.classification === 'string' ? rec.classification : undefined));
@@ -286,14 +432,26 @@ const run = async (): Promise<void> => {
         const newRef = buildRef(rec);
         if (newRef) {
           const refs = Array.isArray(ev.source_refs) ? (ev.source_refs as Array<Record<string, unknown>>) : [];
-          ev.source_refs = dedupeRefs([...refs, newRef]);
+          const deduped = dedupeRefs([...refs, newRef]);
+          ev.source_refs = deduped.refs;
+          if (deduped.duplicatesSuppressed > 0) {
+            for (let i = 0; i < deduped.duplicatesSuppressed; i += 1) {
+              recordDuplicateSignal(report, {
+                signal: 'source_ref_deduplicated',
+                detail: 'Duplicate source reference was suppressed while keeping canonical source_ref entries unique.',
+                update_file: path.basename(filePath),
+                pair_key: pairKey,
+                source_id: rec.source_id ? String(rec.source_id) : undefined
+              });
+            }
+          }
         }
       }
 
       report.interaction_records_merged = Number(report.interaction_records_merged) + 1;
     }
 
-    (report.update_files_absorbed as string[]).push(path.relative(root, filePath));
+    report.update_files_absorbed.push(path.relative(root, filePath));
   }
 
   const requiredSources = [
@@ -318,7 +476,14 @@ const run = async (): Promise<void> => {
     const alias = sourceAliases[required];
     const src = alias ? bySourceId.get(alias) : undefined;
     if (!src) {
-      (report.conflicts_detected as string[]).push(`missing_source_manifest_seed:${required}`);
+      recordConflict(report, `missing_source_manifest_seed:${required}`, {
+        category: 'source_manifest_gap',
+        reason_code: 'missing_source_manifest_seed',
+        message: `Required source manifest seed ${required} is missing from canonical source metadata.`,
+        severity: 'warning',
+        source_id: required,
+        suggested_review_action: 'Data Curator should add or alias this source before downstream publication review.'
+      });
       continue;
     }
     bySourceId.set(required, {
@@ -360,6 +525,12 @@ const run = async (): Promise<void> => {
     const verifiedNext = String(c.status ?? '').toLowerCase() === 'verified';
     citationByKey.set(key, verifiedPrior || !verifiedNext ? prior : c);
     report.citations_merged = Number(report.citations_merged) + 1;
+    recordDuplicateSignal(report, {
+      signal: 'citation_deduplicated',
+      detail: 'Duplicate citation candidate was merged using verified-first preference.',
+      source_id: String(c.source_id ?? ''),
+      update_file: 'knowledge-base/indexes/citation_registry.json'
+    });
   }
   const citationList = Array.from(citationByKey.values()).map((c) => {
     const out = { ...c };
@@ -392,7 +563,7 @@ const run = async (): Promise<void> => {
   const evidenceStatusEnum = ['supported', 'mechanistic_inference', 'provisional_secondary', 'limited_data', 'no_data', 'not_reviewed', 'conflicting_evidence'];
   if (!claimProps.evidence_status) {
     claimProps.evidence_status = { type: 'string', enum: evidenceStatusEnum };
-    (report.schema_changes_made as string[]).push('claim.schema.json:added evidence_status enum');
+    report.schema_changes_made.push('claim.schema.json:added evidence_status enum');
   } else {
     const existing = ((claimProps.evidence_status as Record<string, unknown>).enum ?? []) as string[];
     for (const v of evidenceStatusEnum) if (!existing.includes(v)) existing.push(v);
@@ -426,10 +597,14 @@ const run = async (): Promise<void> => {
       const seenClaimIds = new Set<string>();
       const seenClaimText = new Set<string>();
       const normalized: Array<Record<string, unknown>> = [];
+      let duplicateClaimsSuppressed = 0;
       for (const claim of pkg.claims) {
         const claimId = String(claim.claim_id ?? '');
         const claimText = normalizeText(String(claim.claim ?? ''));
-        if (seenClaimIds.has(claimId) || seenClaimText.has(claimText)) continue;
+        if (seenClaimIds.has(claimId) || seenClaimText.has(claimText)) {
+          duplicateClaimsSuppressed += 1;
+          continue;
+        }
         seenClaimIds.add(claimId);
         seenClaimText.add(claimText);
 
@@ -470,6 +645,14 @@ const run = async (): Promise<void> => {
         normalized.push(claim);
       }
       pkg.claims = normalized;
+      for (let i = 0; i < duplicateClaimsSuppressed; i += 1) {
+        recordDuplicateSignal(report, {
+          signal: 'claim_deduplicated',
+          detail: 'Duplicate claim candidate was suppressed by claim_id or normalized claim text.',
+          update_file: path.relative(root, filePath),
+          source_id: pkg.source_id
+        });
+      }
       report.claims_normalized = Number(report.claims_normalized) + normalized.length;
       await writeJson(filePath, pkg);
     }
@@ -483,15 +666,23 @@ const run = async (): Promise<void> => {
 
   await mkdir(archiveRoot, { recursive: true });
   const archiveRows: string[] = ['# Absorbed Updates', '', '| File absorbed | Target canonical file | Date | Notes |', '|---|---|---|---|'];
-  for (const absorbedRel of report.update_files_absorbed as string[]) {
+  for (const absorbedRel of report.update_files_absorbed) {
     const sourcePath = path.join(root, absorbedRel);
     const targetPath = path.join(archiveRoot, path.basename(absorbedRel));
     try {
       await rename(sourcePath, targetPath);
-      (report.files_archived as string[]).push(path.relative(root, targetPath));
+      report.files_archived.push(path.relative(root, targetPath));
       archiveRows.push(`| \`${absorbedRel}\` | \`src/data/interactionDatasetV2.json\`, \`knowledge-base/indexes/*\`, \`knowledge-base/schemas/*\` | ${new Date().toISOString().slice(0, 10)} | Absorbed by consolidateJsonUpdates.ts |`);
     } catch (error) {
-      (report.conflicts_detected as string[]).push(`archive_failed:${absorbedRel}:${String(error)}`);
+      recordConflict(report, `archive_failed:${absorbedRel}:${String(error)}`, {
+        category: 'archive_failure',
+        reason_code: 'archive_failed',
+        message: `Update file ${absorbedRel} could not be archived after consolidation.`,
+        severity: 'error',
+        update_file: absorbedRel,
+        detail: String(error),
+        suggested_review_action: 'Inspect filesystem/archive path and re-run consolidation after fixing the archive error.'
+      });
     }
   }
   await writeFile(archiveReadme, `${archiveRows.join('\n')}\n`, 'utf8');
@@ -505,8 +696,9 @@ const run = async (): Promise<void> => {
         source_manifest_entries_inserted: report.source_manifest_entries_inserted,
         citations_merged: report.citations_merged,
         claims_normalized: report.claims_normalized,
-        files_archived: (report.files_archived as string[]).length,
-        conflicts_detected: (report.conflicts_detected as string[]).length
+        duplicate_signals: report.duplicate_signals.length,
+        files_archived: report.files_archived.length,
+        conflicts_detected: report.conflicts_detected.length
       },
       null,
       2
@@ -514,7 +706,9 @@ const run = async (): Promise<void> => {
   );
 };
 
-run().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  run().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
